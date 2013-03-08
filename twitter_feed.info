@@ -1,0 +1,5 @@
+name = Twitter Feed
+version = 7.x-1.0
+description = Retrieves a single users twitter feed.
+package = Services
+core = 7.x

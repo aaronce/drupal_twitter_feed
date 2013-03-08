@@ -1,0 +1,242 @@
+<?php
+
+
+
+   /**
+    * implements hook_init
+    */
+    function twitter_feed_init() {
+        if (arg(0) != 'admin'){
+            $js_path = drupal_get_path('module', 'twitter_feed') . '/js/twitter_feed.js'; // subtheme
+        
+            drupal_add_js($js_path);
+        }
+    }
+
+
+
+    /**
+     *	implements hook_block_info
+     */
+    function twitter_feed_block_info() {
+        // This example comes from node.module.
+        $blocks['twitter_feed'] = array(
+            'info' => t('Twitter Feed'), 
+            'cache' => DRUPAL_NO_CACHE
+        );
+      
+        return $blocks;
+    }
+
+
+
+    /**
+     *	implements hook_block_view
+     */
+    function twitter_feed_block_view($delta = '') {
+    	$block = array();
+    
+    	switch ($delta) {
+    		case 'twitter_feed' :
+    			$block['subject'] = t('Twitter Feed');
+    			$block['content'] = _twitter_feed_builder();
+    		break;
+    	}
+    
+    	return $block;
+    }
+
+
+
+    /**
+     *	Implements hook_node_view_alter
+     */
+    function twitter_feed_node_view_alter(&$build) {
+    	if($build['#node']->nid == 26) {
+    		//krumo::dump($build);
+    	}
+    }
+
+
+
+    /**
+     * Implements hook_menu()
+     */
+    function twitter_feed_menu(){
+        $items['admin/config/services/twitterfeed/settings'] = array(
+            'title' => 'Twitter Feed Settings',
+            'description' => 'Twitter Feed settings',
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('_twitter_feed_admin_settings'),
+            'access arguments' => array('administer site configuration'),
+            'type' => MENU_NORMAL_ITEM,
+        );
+          
+        return $items;
+    }
+    
+    
+    
+    /**
+     * constructs the admin form.
+     */
+    function _twitter_feed_admin_settings(){
+        
+        $oauth_access_token = variable_get('oauth_access_token');
+        $oauth_access_token_secret = variable_get('oauth_access_token_secret');
+        $consumer_key = variable_get('twitter_feed_consumer_key');
+        $consumer_secret = variable_get('twitter_feed_consumer_secret');
+        
+        $form  = array();
+        $form['twitter_feed_oauth_access_token'] = array(
+                            '#type' => 'textfield',
+                            '#title' => t('oauth access token'),
+                            '#default_value' => $oauth_access_token,
+                            '#description' => t('oauth access token'),
+                            '#required' => TRUE,
+        );
+        
+        $form['twitter_feed_oauth_access_token_secret'] = array(
+                            '#type' => 'textfield',
+                            '#title' => t('oauth access token secret'),
+                            '#default_value' => $oauth_access_token_secret,
+                            '#description' => t('oauth access token secret'),
+                            '#required' => TRUE,
+        );
+        
+        $form['twitter_feed_consumer_key'] = array(
+                            '#type' => 'textfield',
+                            '#title' => t('Twitter Consumer Key'),   
+                            '#default_value' => $consumer_key,
+                            '#description' => t('Twitter Consumer Key'),
+                            '#required' => TRUE,
+        );
+        
+        $form['twitter_feed_consumer_secret'] = array(
+                            '#type' => 'textfield',
+                            '#title' => t('Twitter Consumer Secret'),   
+                            '#default_value' => $consumer_secret,
+                            '#description' => t('Twitter Consumer Secret'),
+                            '#required' => TRUE,
+        );
+    
+        $form['#submit'][] = '_twitter_feed_admin_settings_submit';
+    
+        return system_settings_form($form);
+    }
+    
+    
+    
+    /**
+     * submits _twitter_feed_admin_settings
+     * handles the admin submission data.
+     */
+    function _twitter_feed_admin_settings_submit($form, &$form_state){
+
+        if($form_state['values']['twitter_feed_oauth_access_token']){
+            variable_set('twitter_feed_oauth_access_token', $form_state['values']['twitter_feed_oauth_access_token']);
+        }
+        
+        if($form_state['values']['twitter_feed_oauth_access_token_secret']){
+            variable_set('twitter_feed_oauth_access_token_secret', $form_state['values']['twitter_feed_oauth_access_token_secret']);
+        }
+        
+        if($form_state['values']['twitter_feed_consumer_key']){
+            variable_set('twitter_feed_consumer_key', $form_state['values']['twitter_feed_consumer_key']);
+        }
+        
+        if($form_state['values']['twitter_feed_consumer_secret']){
+            variable_set('twitter_feed_consumer_secret', $form_state['values']['twitter_feed_consumer_secret']);
+        }
+    }
+  
+
+
+    /**
+     *	Front end Block contents renderer
+     */
+    function _twitter_feed_builder() {
+        
+        $oauth_access_token = variable_get('twitter_feed_oauth_access_token');
+        $oauth_access_token_secret = variable_get('twitter_feed_oauth_access_token_secret');
+        $consumer_key = variable_get('twitter_feed_consumer_key');
+        $consumer_secret = variable_get('twitter_feed_consumer_secret');
+        
+        if($oauth_access_token !== null && $oauth_access_token_secret !== null && $consumer_key !== null && $consumer_secret !== null) {
+            $twit_data = _twitter_feed_auth($oauth_access_token, $oauth_access_token_secret, $consumer_key, $consumer_secret);
+            
+            krumo::dump($twit_data);
+            
+        } else {
+            print "Twitter Unavailable (err: 1000)";
+        }
+    
+    }
+
+
+
+    /**
+     *  Twitter Auth
+     */
+    function _twitter_feed_auth($oauth_access_token, $oauth_access_token_secret, $consumer_key, $consumer_secret) {
+        
+        $url = "https://api.twitter.com/1.1/statuses/user_timeline.json";
+        
+        $oauth = array( 'oauth_consumer_key' => $consumer_key,
+                        'oauth_nonce' => time(),
+                        'oauth_signature_method' => 'HMAC-SHA1',
+                        'oauth_token' => $oauth_access_token,
+                        'oauth_timestamp' => time(),
+                        'oauth_version' => '1.0');
+        
+        $base_info = _buildBaseString($url, 'GET', $oauth);
+        $composite_key = rawurlencode($consumer_secret) . '&' . rawurlencode($oauth_access_token_secret);
+        $oauth_signature = base64_encode(hash_hmac('sha1', $base_info, $composite_key, true));
+        $oauth['oauth_signature'] = $oauth_signature;
+        
+        // Make Requests
+        $header = array(_buildAuthorizationHeader($oauth), 'Expect:');
+        $options = array( CURLOPT_HTTPHEADER => $header,
+                          //CURLOPT_POSTFIELDS => $postfields,
+                          CURLOPT_HEADER => false,
+                          CURLOPT_URL => $url,
+                          CURLOPT_RETURNTRANSFER => true,
+                          CURLOPT_SSL_VERIFYPEER => false);
+        
+        $feed = curl_init();
+        curl_setopt_array($feed, $options);
+        $json = curl_exec($feed);
+        curl_close($feed);
+        
+        return json_decode($json);
+        
+    }
+
+
+    
+    /**
+     * 
+     */
+    function _buildBaseString($baseURI, $method, $params) {
+            $r = array();
+            ksort($params);
+            foreach($params as $key=>$value){
+                $r[] = "$key=" . rawurlencode($value);
+            }
+            return $method."&" . rawurlencode($baseURI) . '&' . rawurlencode(implode('&', $r));
+        }
+        
+    
+    
+    /**
+     * 
+     */
+    function _buildAuthorizationHeader($oauth) {
+        $r = 'Authorization: OAuth ';
+        $values = array();
+        foreach($oauth as $key=>$value)
+            $values[] = "$key=\"" . rawurlencode($value) . "\"";
+        $r .= implode(', ', $values);
+        return $r;
+    }
+
